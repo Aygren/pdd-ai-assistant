@@ -46,7 +46,6 @@ optimizer_with_history = RunnableWithMessageHistory(
 
 
 # === 2. JSON-АНАЛИТИК СИТУАЦИИ (Исправленный вариант с экранированием скобок) ===
-
 # === 2. JSON-АНАЛИТИК СИТУАЦИИ (С пониманием светофоров) ===
 
 analyzer_prompt = ChatPromptTemplate.from_messages([
