@@ -1,7 +1,10 @@
 import os
+import json
 from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_mistralai import ChatMistralAI
 
 # Импортируем твой поиск по Supabase
@@ -9,84 +12,111 @@ from search_pdd import search_pdd
 
 load_dotenv()
 
-# Инициализируем бесплатную модель от Mistral
-# Используем mistral-small-latest (она быстрая, умная и идеальна для извлечения сути)
+# Инициализируем Mistral
 llm = ChatMistralAI(model="mistral-small-latest", temperature=0.1)
 
-# === КОНВЕЙЕР 1: ПРЕВРАЩЕНИЕ ЭМОЦИЙ В КЛЮЧЕВЫЕ СЛОВА ===
+# Хранилище историй чата в памяти
+chats_storage = {}
+
+def get_session_history(session_id: str) -> InMemoryChatMessageHistory:
+    if session_id not in chats_storage:
+        chats_storage[session_id] = InMemoryChatMessageHistory()
+    return chats_storage[session_id]
+
+
+# === 1. ЦЕПОЧКА ОПТИМИЗАТОРА ЗАПРОСОВ ===
 
 optimizer_prompt = ChatPromptTemplate.from_messages([
     ("system", (
-        "Ты — строгий эксперт-аналитик ПДД. Твоя задача — выделить из текста водителя только ключевые термины для поиска в юридической базе данных.\n\n"
-        "СТРОГИЕ ПРАВИЛА:\n"
-        "1. Выводи ТОЛЬКО 2-3 ключевых слова в начальной форме через пробел.\n"
-        "2. Используй ТОЛЬКО те факты и действия, которые ЯВНО описаны в тексте (например: езда задним ходом, жилая зона, перекресток, обгон).\n"
-        "3. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО выдумывать и добавлять термины, которых не было в ситуации (если в тексте нет слов 'разметка' или 'остановка' — не пиши их!).\n"
-        "4. Ответ должен содержать ТОЛЬКО поисковые слова, без знаков препинания и лишнего текста."
+        "Ты — синтаксический анализатор. Выведи ровно 2-3 КЛЮЧЕВЫХ СЛОВА из нового сообщения водителя для поиска в базе данных ПДД.\n"
+        "Правила: ТОЛЬКО слова через пробел, без знаков препинания. Игнорируй слова 'дтп', 'авария', 'виновник'."
     )),
-    ("human", "Дорожная ситуация: {raw_user_text}")
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{raw_user_text}")
 ])
 
-# Собираем мини-цепочку оптимизатора запросов
 optimizer_chain = optimizer_prompt | llm | StrOutputParser()
 
-# === КОНВЕЙЕР 2: ГЕНЕРАЦИЯ ОТВЕТА ПО НАЙДЕННОМУ КОНТЕКСТУ ===
+optimizer_with_history = RunnableWithMessageHistory(
+    optimizer_chain,
+    get_session_history,
+    input_messages_key="raw_user_text",
+    history_messages_key="chat_history"
+)
 
-final_answer_prompt = ChatPromptTemplate.from_messages([
+
+# === 2. НОВАЯ ЦЕПОЧКА: ИНСПЕКТОР-РАССЛЕДОВАТЕЛЬ ===
+
+inspector_prompt = ChatPromptTemplate.from_messages([
     ("system", (
-        "Ты — профессиональный ИИ-ассистент по Правилам Дорожного Движения (ПДД) России.\n"
-        "Перед тобой реальная история водителя и официальные выдержки из ПДД, которые удалось найти по его ситуации.\n\n"
-        "НАЙДЕННЫЕ СТАТЬИ ПДД:\n{context}\n\n"
-        "ПРАВИЛА ОТВЕТА:\n"
-        "1. Проанализируй ситуацию водителя и объясни, что говорят Правила по этому поводу, опираясь ТОЛЬКО на предоставленные статьи ПДД.\n"
-        "2. Будь вежливым, пиши понятным человеческим языком, но сохраняй юридическую точность.\n"
-        "3. Если в статьях нет прямого ответа, так и скажи, не придумывай законы от себя.\n"
-        "4. В самом конце ответа ОБЯЗАТЕЛЬНО выведи ссылки на источники (URL), которые были в статьях."
+        "Ты — дотошный инспектор ГИБДД. Твоя цель — собрать ПОЛНУЮ картину ДТП на перекрестке, прежде чем назвать виновного.\n"
+        "Пока ты не знаешь точный статус ОБЕИХ машин, ты НЕ ИМЕЕШЬ ПРАВА выносить вердикт.\n\n"
+        "ЖЕСТКИЙ ЧЕК-ЛИСТ ДЛЯ ПЕРЕКРЕСТКА (Проверь себя):\n"
+        "1. Известен ли статус КАЗДОЙ машины? (Кто на главной, кто на второстепенной, меняет ли главная направление?)\n"
+        "2. Известно ли точное направление КАЗДОЙ машины? (Один поворачивал налево, а второй? Он ехал навстречу, попутно или сбоку?)\n"
+        "3. Если пользователь говорит 'у меня главная', это НЕ значит, что у второго второстепенная! Встречный тоже мог быть на главной. Ты обязан это уточнить!\n\n"
+        "ТВОИ ДЕЙСТВИЯ:\n"
+        "- Если в истории диалога нет точного ответа хотя бы на ОДИН вопрос из чек-листа — ты обязан выбрать ВАРИАНТ А. Не фантазируй, задай водителю конкретный вопрос (например: 'В каком направлении ехал второй участник и какой знак висел у него?').\n"
+        "- Если ВСЕ данные о траекториях и знаках ОБЕИХ сторон известны на 100% — выбери ВАРИАНТ Б.\n\n"
+        "ФОРМАТ ОТВЕТА:\n"
+        "ВАРИАНТ А: [Твои уточняющие вопросы]\n"
+        "ВАРИАНТ Б:\nГОТОВО\n[Полный юридический разбор на основе контекста ПДД:\n{context}\nСсылки:\n{allowed_links}]"
     )),
-    ("human", "История водителя: {raw_user_text}")
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{raw_user_text}")
 ])
 
-# Цепочка для генерации финального ответа
-final_chain = final_answer_prompt | llm | StrOutputParser()
+inspector_chain = inspector_prompt | llm | StrOutputParser()
 
-def run_full_rag(user_speech: str):
-    """
-    Полный цикл: Оптимизация -> Поиск -> Финальный ответ
-    """
-    print("\n[ИИ] Анализирую ваш рассказ...")
-    # 1. Извлекаем точные ключевые слова через Mistral
-    keywords = optimizer_chain.invoke({"raw_user_text": user_speech})
-    print(f"[ИИ] Сформулирован поисковый запрос: '{keywords}'")
+inspector_with_history = RunnableWithMessageHistory(
+    inspector_chain,
+    get_session_history,
+    input_messages_key="raw_user_text",
+    history_messages_key="chat_history"
+)
+
+
+# === ГЛАВНАЯ ФУНКЦИЯ КОНВЕЙЕРА ===
+
+def run_full_rag_with_memory(user_speech: str, session_id: str = "default_user") -> str:
+    config = {"configurable": {"session_id": session_id}}
     
-    # 2. Ищем чанки в нашей базе Supabase
+    # 1. Извлекаем ключевые слова для Supabase
+    keywords = optimizer_with_history.invoke(
+        {"raw_user_text": user_speech}, 
+        config=config
+    )
+    print(f"[ИИ Внутренности] Поисковый запрос: '{keywords}'")
+    
+    # 2. Поиск в Supabase
     raw_docs = search_pdd(keywords, limit=3)
     
-    if not raw_docs:
-        return "К сожалению, в базе данных ПДД не нашлось подходящих статей для вашей ситуации."
-        
-    # Склеиваем контекст
     context_text = ""
-    for doc in raw_docs:
-        context_text += f"--- Статья: {doc['title']} ---\n{doc['content']}\nСсылка: {doc['url']}\n\n"
-        
-    # 3. Генерируем финальный разбор ситуации
-    print("[ИИ] Формирую юридический ответ...")
-    final_response = final_chain.invoke({
-        "context": context_text,
-        "raw_user_text": user_speech
-    })
+    links_list = []
     
-    return final_response
+    if raw_docs:
+        for doc in raw_docs:
+            context_text += f"--- Статья: {doc['title']} ---\n{doc['content']}\n\n"
+            if doc.get('url') and doc['url'] not in links_list:
+                links_list.append(f"- [{doc['title']}]({doc['url']})")
+                
+    allowed_links_string = "\n".join(links_list) if links_list else "Нет доступных ссылок."
+    
+    if not context_text:
+        context_text = "Подходящие статьи в базе данных ПДД не найдены."
 
-# === КОРНЕВОЙ ТЕСТ ВСЕЙ СИСТЕМЫ ===
-if __name__ == "__main__":
-    test_situation = (
-        "Здравствуйте, я очень переживаю. Во дворе сдавал назад, и в меня въехала машина, "
-        "которая ехала слишком быстро между домами. Мы оба утверждаем, что правы. "
-        "Можете объяснить, как обычно определяют виновного в таких случаях?"
+    # 3. Запуск Инспектора, который решает: спрашивать дальше или давать ответ
+    response = inspector_with_history.invoke(
+        {
+            "raw_user_text": user_speech,
+            "context": context_text,
+            "allowed_links": allowed_links_string
+        },
+        config=config
     )
     
-    print("=== ЗАПУСК ПОЛНОЦЕННОЙ RAG-СИСТЕМЫ ===")
-    response = run_full_rag(test_situation)
-    print("\n=== ОТВЕТ АССИСТЕНТА ===")
-    print(response)
+    # Очищаем маркер "ГОТОВО", если модель решила выдать финальный вердикт
+    if response.startswith("ГОТОВО"):
+        response = response.replace("ГОТОВО", "").strip()
+    
+    return response
