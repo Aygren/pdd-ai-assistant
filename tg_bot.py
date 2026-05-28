@@ -32,14 +32,14 @@ def send_welcome(message):
 # 2. Обработка ГОЛОСОВЫХ сообщений (Голос -> Текст -> ПДД-ответ)
 @bot.message_handler(content_types=['voice'])
 def handle_voice_message(message):
-    # Отправляем в чат статус "печатает...", показывая, что ИИ обрабатывает аудио
     bot.send_chat_action(message.chat.id, 'typing')
     
     try:
-        # Скачиваем голосовой файл с серверов Telegram в оперативную память
+        # Получаем информацию о файле через Telegram API
         file_info = bot.get_file(message.voice.file_id)
-        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}"
-        voice_bytes = requests.get(file_url).content
+        
+        # ЖЕЛЕЗОБЕТОННЫЙ СПОСОБ: Скачиваем байты напрямую через встроенный метод telebot
+        voice_bytes = bot.download_file(file_info.file_path)
         
         # Распознаем аудио через Whisper на Groq API
         user_text = transcribe_audio(voice_bytes)
@@ -48,10 +48,9 @@ def handle_voice_message(message):
             bot.reply_to(message, "❌ Извини, мне не удалось распознать речь. Попробуй сказать четче или напиши текстом.")
             return
             
-        # Показываем водителю распознанный текст, чтобы он видел, что всё распознано правильно
+        # Показываем водителю распознанный текст
         bot.reply_to(message, f"🗣️ **Вы сказали:**\n_{user_text}_", parse_mode="Markdown")
         
-        # Запускаем статус повторно перед долгой работой ИИ-анализатора
         bot.send_chat_action(message.chat.id, 'typing')
         
         # Передаем текст в RAG-конвейер с сохранением памяти
@@ -62,6 +61,7 @@ def handle_voice_message(message):
         bot.send_message(message.chat.id, answer)
         
     except Exception as e:
+        print(f"[ОШИБКА В ТГ-БОТЕ]: {e}")
         bot.send_message(message.chat.id, f"❌ Произошла ошибка при обработке голосового сообщения: {e}")
 
 # 3. Обработка всех текстовых сообщений (вопросов по ПДД)
