@@ -7,6 +7,7 @@ from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_mistralai import ChatMistralAI
 from openai import OpenAI  # Импортируем универсальный клиент для работы с Groq STT
+import io
 
 # Импортируем поиск по Supabase
 from search_pdd import search_pdd
@@ -185,17 +186,19 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         return ""
         
     try:
-        # Инициализируем клиент (Groq совместим с библиотекой openai, меняется только base_url)
         client = OpenAI(
             api_key=groq_api_key,
             base_url="https://api.groq.com/openai/v1"
         )
         
-        # Передаем байты аудио под видом файла voice.ogg (формат Телеграма)
+        # Оборачиваем байты в BytesIO и явно даем имя с расширением .ogg
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "voice.ogg"
+        
         transcription = client.audio.transcriptions.create(
-            file=("voice.ogg", audio_bytes),
-            model="whisper-large-v3",  # Бесплатная и сверхточная модель Whisper
-            language="ru"              # Явно указываем русский язык для точности
+            file=audio_file,          # Передаем объект файла из памяти
+            model="whisper-large-v3",
+            language="ru"
         )
         return transcription.text
     except Exception as e:
