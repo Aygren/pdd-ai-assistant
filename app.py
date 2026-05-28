@@ -3,8 +3,8 @@ import streamlit as st
 from ai_assistant import run_full_rag_with_memory
 
 st.set_page_config(
-    page_title="Помощник ПДД | Чат-бот",
-    page_icon="🚗",
+    page_title="PDD AI Assistant",
+    page_icon="assets/favicon_car.svg",
     layout="centered"
 )
 
