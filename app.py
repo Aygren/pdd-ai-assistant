@@ -2,14 +2,20 @@ import os
 import streamlit as st
 from ai_assistant import run_full_rag_with_memory
 
+# Безопасное чтение SVG-кода иконки напрямую из файла
+try:
+    with open("assets/favicon_car.svg", "r", encoding="utf-8") as f:
+        svg_code = f.read()
+except Exception:
+    svg_code = "🚗"  # Запасной эмодзи, если файл не нашелся
+
 st.set_page_config(
     page_title="PDD AI Assistant",
-    page_icon="assets/favicon_car.svg",
+    page_icon=svg_code,  # Передаем сам текст SVG-кода
     layout="centered"
 )
 
 
-# --- ФУНКЦИЯ ДЛЯ ВЫВОДА SVG-ИКОНОК ИЗ ПАПКИ ASSETS ---
 # --- ФУНКЦИЯ ДЛЯ ВЫВОДА SVG-ИКОНОК ИЗ ПАПКИ ASSETS ---
 def render_svg(filename):
     """Читает SVG-файл из папки assets, центрирует его и выводит в интерфейс."""
