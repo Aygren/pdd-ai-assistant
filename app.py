@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from ai_assistant import run_full_rag_with_memory
 
@@ -7,10 +8,40 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🚗 Интеллектуальный чат-ассистент по ПДД")
-st.markdown("Задайте вопрос или опишите дорожную ситуацию. ИИ разберет её на основе базы знаний Supabase.")
+
+# --- ФУНКЦИЯ ДЛЯ ВЫВОДА SVG-ИКОНОК ИЗ ПАПКИ ASSETS ---
+# --- ФУНКЦИЯ ДЛЯ ВЫВОДА SVG-ИКОНОК ИЗ ПАПКИ ASSETS ---
+def render_svg(filename):
+    """Читает SVG-файл из папки assets, центрирует его и выводит в интерфейс."""
+    filepath = os.path.join("assets", filename)
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            svg_content = f.read()
+        
+        # Оборачиваем SVG в центрирующий контейнер
+        centered_svg = f"""
+        <div style="display: flex; justify-content: center; align-items: center; width: 100%; padding: 10px 0;">
+            {svg_content}
+        </div>
+        """
+        st.markdown(centered_svg, unsafe_allow_html=True)
+    else:
+        st.warning(f"Иконка {filename} не найдена в папке assets")
+
+
+# --- ОФОРМЛЕНИЕ ШАПКИ САЙТА ---
+
+# Отображаем твой кастомный логотип из v0
+render_svg("car_logo2.svg")
 
 st.divider()
+
+st.markdown(
+    "<p style='text-align: center; color: #191a1b;'>Задайте вопрос или опишите дорожную ситуацию. ИИ разберет её на основе базы знаний.</p>", 
+    unsafe_allow_html=True
+)
+
+# --- ЛОГИКА ЧАТ-БОТА ---
 
 # Инициализируем историю сообщений в сессии Streamlit, если её еще нет
 if "messages" not in st.session_state:
