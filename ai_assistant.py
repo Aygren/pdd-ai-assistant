@@ -6,6 +6,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_mistralai import ChatMistralAI
+from openai import OpenAI
 
 # Импортируем поиск по Supabase
 from search_pdd import search_pdd
@@ -172,3 +173,33 @@ def run_full_rag_with_memory(user_speech: str, session_id: str = "default_user")
     )
     
     return final_response
+
+from openai import OpenAI  # Добавь этот импорт в самый верх файла
+
+# === 4. ФУНКЦИЯ БЕСПЛАТНОЙ ТРАНСКРИБАЦИИ ГОЛОСА (GROQ) ===
+
+def transcribe_audio(audio_bytes: bytes) -> str:
+    """Принимает байты аудиофайла и возвращает распознанный текст через бесплатный Groq API."""
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    
+    if not groq_api_key:
+        print("[ОШИБКА] Переменная GROQ_API_KEY не найдена в окружении!")
+        return ""
+        
+    try:
+        # Groq полностью совместим с библиотекой openai, меняется только base_url
+        client = OpenAI(
+            api_key=groq_api_key,
+            base_url="https://api.groq.com/openai/v1"
+        )
+        
+        # Передаем байты аудио под видом файла voice.ogg (формат Телеграма)
+        transcription = client.audio.transcriptions.create(
+            file=("voice.ogg", audio_bytes),
+            model="whisper-large-v3",  # Бесплатная и сверхточная модель от OpenAI на серверах Groq
+            language="ru"              # Явно указываем русский язык для точности
+        )
+        return transcription.text
+    except Exception as e:
+        print(f"[ОШИБКА ТРАНСКРИБАЦИИ] {e}")
+        return ""

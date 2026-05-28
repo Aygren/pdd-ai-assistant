@@ -4,3 +4,4 @@ langchain-mistralai
 supabase
 python-dotenv
 pyTelegramBotAPI
+openai
