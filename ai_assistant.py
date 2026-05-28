@@ -6,7 +6,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_mistralai import ChatMistralAI
-from openai import OpenAI
+from openai import OpenAI  # Импортируем универсальный клиент для работы с Groq STT
 
 # Импортируем поиск по Supabase
 from search_pdd import search_pdd
@@ -46,8 +46,7 @@ optimizer_with_history = RunnableWithMessageHistory(
 )
 
 
-# === 2. JSON-АНАЛИТИК СИТУАЦИИ (Исправленный вариант с экранированием скобок) ===
-# === 2. JSON-АНАЛИТИК СИТУАЦИИ (С пониманием светофоров) ===
+# === 2. JSON-АНАЛИТИК СИТУАЦИИ (С пониманием светофоров и попутных аварий) ===
 
 analyzer_prompt = ChatPromptTemplate.from_messages([
     ("system", (
@@ -121,8 +120,7 @@ def run_full_rag_with_memory(user_speech: str, session_id: str = "default_user")
     
     # Получаем историю, чтобы узнать количество реплик
     history = get_session_history(session_id)
-    # Если в истории уже больше 4 сообщений (2 круга диалога), 
-    # даем ИИ волю ответить на основе того, что есть
+    # Если в истории уже больше 4 сообщений (2 круга диалога), даем ИИ волю ответить на основе того, что есть
     is_long_dialogue = len(history.messages) > 4
 
     # Проверяем, собраны ли все 4 критических факта
@@ -133,11 +131,9 @@ def run_full_rag_with_memory(user_speech: str, session_id: str = "default_user")
         analysis.get('other_priority_known', False)
     )
     
-    # Изменяем условие: если инфа собрана ИЛИ диалог затянулся — идем к RAG
+    # Изменяем условие: если инфа не собрана И диалог еще короткий — уточняем детали
     if not all_info_gathered and not is_long_dialogue:
         return analysis.get('missing_info_question', "Уточните, пожалуйста, детали дорожной обстановки.")
-        
-    # ... (дальше идет твой стандартный код RAG-поиска и финального ответа)
         
     # 3. Если ВСЕ данные на месте — запускаем классический RAG с Supabase
     keywords = optimizer_with_history.invoke(
@@ -174,7 +170,6 @@ def run_full_rag_with_memory(user_speech: str, session_id: str = "default_user")
     
     return final_response
 
-from openai import OpenAI  # Добавь этот импорт в самый верх файла
 
 # === 4. ФУНКЦИЯ БЕСПЛАТНОЙ ТРАНСКРИБАЦИИ ГОЛОСА (GROQ) ===
 
@@ -187,7 +182,7 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         return ""
         
     try:
-        # Groq полностью совместим с библиотекой openai, меняется только base_url
+        # Инициализируем клиент (Groq совместим с библиотекой openai, меняется только base_url)
         client = OpenAI(
             api_key=groq_api_key,
             base_url="https://api.groq.com/openai/v1"
@@ -196,7 +191,7 @@ def transcribe_audio(audio_bytes: bytes) -> str:
         # Передаем байты аудио под видом файла voice.ogg (формат Телеграма)
         transcription = client.audio.transcriptions.create(
             file=("voice.ogg", audio_bytes),
-            model="whisper-large-v3",  # Бесплатная и сверхточная модель от OpenAI на серверах Groq
+            model="whisper-large-v3",  # Бесплатная и сверхточная модель Whisper
             language="ru"              # Явно указываем русский язык для точности
         )
         return transcription.text
