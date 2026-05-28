@@ -14,8 +14,11 @@ from search_pdd import search_pdd
 load_dotenv()
 
 # Инициализируем стандартную модель и модель со строгим JSON-ответом с защитой от зависания (таймаут 10 секунд)
+# Инициализируем базовую модель Mistral (без response_format внутри конструктора)
 llm = ChatMistralAI(model="mistral-small-latest", temperature=0.1, timeout=10)
-llm_json = ChatMistralAI(model="mistral-small-latest", temperature=0.1, response_format={"type": "json_object"}, timeout=10)
+
+# Для JSON-аналитика привязываем формат строго через метод .bind()
+llm_json = llm.bind(response_format={"type": "json_object"})
 # Хранилище историй чата в памяти
 chats_storage = {}
 
